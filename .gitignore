@@ -1,0 +1,11 @@
+# build & cache
+.cache/
+/bin/
+*.exe
+*.test
+*.out
+
+# env & secrets
+.env
+.env.*
+!.env.example
