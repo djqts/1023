@@ -1,0 +1,232 @@
+name: banner-fingerprint
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+00:00
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-fingerprint}
+      MYSQL_USER: ${MYSQL_USER:-fingerprint}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-fingerprint}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} -e 'SELECT 1' >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:-redispass}
+      - --maxmemory
+      - 128mb
+      - --maxmemory-policy
+      - volatile-lru
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redispass}
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    logging: *default-logging
+
+  migrate:
+    image: migrate/migrate:v4.17.0
+    restart: "no"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./deploy/migrations:/migrations:ro
+    command:
+      - "-path=/migrations"
+      - "-database=mysql://${MYSQL_USER:-fingerprint}:${MYSQL_PASSWORD:-fingerprint}@tcp(mysql:3306)/${MYSQL_DATABASE:-fingerprint}?multiStatements=true"
+      - "up"
+    networks:
+      - internal
+    logging: *default-logging
+
+  server:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      target: server
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-unknown}
+    image: banner-fingerprint/server:${VERSION:-dev}
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_VERSION: ${VERSION:-dev}
+      HTTP_ADDR: ":8080"
+      LOG_LEVEL: info
+      PROFILE: p0b
+      RULES_DIR: /app/rules
+      MYSQL_DSN: "${MYSQL_USER:-fingerprint}:${MYSQL_PASSWORD:-fingerprint}@tcp(mysql:3306)/${MYSQL_DATABASE:-fingerprint}?charset=utf8mb4&parseTime=True&loc=UTC"
+      REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-redispass}"
+    volumes:
+      - ./rules:/app/rules:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      - internal
+      - edge
+    read_only: true
+    user: "65532:65532"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD", "/app/server", "healthcheck", "--url=http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    logging: *default-logging
+
+  client:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      target: client
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-unknown}
+    image: banner-fingerprint/client:${VERSION:-dev}
+    restart: "no"
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      SERVER_URL: "http://server:8080"
+    volumes:
+      - ./data:/data:ro
+    command:
+      - "-server"
+      - "http://server:8080"
+      - "-input"
+      - "/data/input.json"
+    networks:
+      - internal
+    read_only: true
+    user: "65532:65532"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.5
+    logging: *default-logging
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    profiles: ["p1"]
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-fingerprint}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-fingerprint}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    logging: *default-logging
+
+  worker:
+    profiles: ["p1"]
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      target: server
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-unknown}
+    image: banner-fingerprint/server:${VERSION:-dev}
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_VERSION: ${VERSION:-dev}
+      PROFILE: p1
+      RULES_DIR: /app/rules
+      MYSQL_DSN: "${MYSQL_USER:-fingerprint}:${MYSQL_PASSWORD:-fingerprint}@tcp(mysql:3306)/${MYSQL_DATABASE:-fingerprint}?charset=utf8mb4&parseTime=True&loc=UTC"
+      REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-redispass}"
+      RABBITMQ_URL: "amqp://${RABBITMQ_USER:-fingerprint}:${RABBITMQ_PASSWORD:-fingerprint}@rabbitmq:5672/"
+    volumes:
+      - ./rules:/app/rules:ro
+    command: ["worker"]
+    networks:
+      - internal
+    read_only: true
+    user: "65532:65532"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.5
+    logging: *default-logging
+
+networks:
+  internal:
+    internal: true
+  edge:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  rabbitmq_data:

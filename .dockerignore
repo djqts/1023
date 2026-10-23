@@ -1,0 +1,12 @@
+.git
+.gitignore
+.cache
+procedures
+docs
+data
+rules
+*.md
+docker-compose*.yml
+compose*.yml
+.env
+.env.*
