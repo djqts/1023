@@ -154,6 +154,16 @@ func runServer() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	go watchRuleReload(ctx, func() error {
+		next, err := engine.Load(rulesDir)
+		if err != nil {
+			return err
+		}
+		handler.Reload(next)
+		logger.Info("rules reloaded", "count", next.RuleCount(), "digest", next.Digest())
+		return nil
+	}, logger)
+
 	errCh := make(chan error, 1)
 	go func() {
 		logger.Info("server listening", "addr", httpServer.Addr, "profile", profile)

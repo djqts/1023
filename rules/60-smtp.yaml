@@ -1,0 +1,38 @@
+version: "1"
+rules:
+  - id: smtp-exchange
+    protocol: SMTP
+    product: Microsoft Exchange
+    priority: 110
+    confidence: 0.85
+    os_hint: Windows
+    patterns:
+      - '(?im)^220[ -].*Microsoft ESMTP MAIL Service'
+
+  - id: smtp-postfix
+    protocol: SMTP
+    product: Postfix
+    priority: 100
+    confidence: 0.8
+    patterns:
+      - '(?im)^220[ -].*ESMTP.*Postfix'
+    examples:
+      - banner: '220 mail.example.com ESMTP Postfix'
+        port: 25
+        protocol: SMTP
+        product: Postfix
+
+  - id: smtp-exim
+    protocol: SMTP
+    product: Exim
+    priority: 100
+    confidence: 0.8
+    patterns:
+      - '(?im)^220[ -].*ESMTP.*Exim'
+
+  - id: smtp-generic
+    protocol: SMTP
+    priority: 10
+    confidence: 0.6
+    patterns:
+      - '(?im)^220[ -].*ESMTP'

@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -51,7 +52,7 @@ type Options struct {
 
 // Server 是 Gin HTTP 接入层。
 type Server struct {
-	engine  *engine.Engine
+	engine  atomic.Pointer[engine.Engine]
 	opts    Options
 	logger  *slog.Logger
 	started time.Time
@@ -74,11 +75,19 @@ func New(eng *engine.Engine, opts Options) *Server {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
-	return &Server{
-		engine:  eng,
+	s := &Server{
 		opts:    opts,
 		logger:  opts.Logger,
 		started: time.Now(),
+	}
+	s.engine.Store(eng)
+	return s
+}
+
+// Reload 原子替换规则快照；在途请求继续使用旧快照。
+func (s *Server) Reload(eng *engine.Engine) {
+	if eng != nil {
+		s.engine.Store(eng)
 	}
 }
 
@@ -142,11 +151,17 @@ func (s *Server) handleFingerprint(c *gin.Context) {
 		}
 	}
 
+	eng := s.engine.Load()
+	if eng == nil || eng.RuleCount() == 0 {
+		s.fail(c, http.StatusServiceUnavailable, "not_ready", "rules not loaded")
+		return
+	}
+
 	start := time.Now()
 	results := make([]api.FingerprintResult, 0, len(items))
 	unknown := 0
 	for _, item := range items {
-		result := s.recognize(c.Request.Context(), item)
+		result := s.recognize(c.Request.Context(), item, eng)
 		if result.Protocol == api.ProtocolUnknown {
 			unknown++
 		}
@@ -159,7 +174,7 @@ func (s *Server) handleFingerprint(c *gin.Context) {
 			Total:      len(items),
 			Unknown:    unknown,
 			LatencyMS:  time.Since(start).Milliseconds(),
-			RuleDigest: s.engine.Digest(),
+			RuleDigest: eng.Digest(),
 			At:         time.Now(),
 		})
 	}
@@ -167,7 +182,7 @@ func (s *Server) handleFingerprint(c *gin.Context) {
 	c.JSON(http.StatusOK, results)
 }
 
-func (s *Server) recognize(ctx context.Context, item api.FingerprintItem) (result api.FingerprintResult) {
+func (s *Server) recognize(ctx context.Context, item api.FingerprintItem, eng *engine.Engine) (result api.FingerprintResult) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			s.logger.ErrorContext(ctx, "fingerprint panic isolated",
@@ -183,7 +198,7 @@ func (s *Server) recognize(ctx context.Context, item api.FingerprintItem) (resul
 		return unknownResult(item)
 	}
 
-	out, err := s.engine.Fingerprint(fingerprint.Input{
+	out, err := eng.Fingerprint(fingerprint.Input{
 		IP:     item.IP,
 		Port:   item.Port,
 		Banner: banner,
@@ -208,7 +223,8 @@ func (s *Server) recognize(ctx context.Context, item api.FingerprintItem) (resul
 }
 
 func (s *Server) handleHealth(c *gin.Context) {
-	if s.engine == nil || s.engine.RuleCount() == 0 {
+	eng := s.engine.Load()
+	if eng == nil || eng.RuleCount() == 0 {
 		c.JSON(http.StatusServiceUnavailable, api.HealthResponse{
 			Status:  api.StatusNotReady,
 			Version: s.opts.Version,
@@ -246,8 +262,8 @@ func (s *Server) handleHealth(c *gin.Context) {
 		Status:  status,
 		Version: s.opts.Version,
 		Rules: api.RuleHealth{
-			Count:    s.engine.RuleCount(),
-			Digest:   s.engine.Digest(),
+			Count:    eng.RuleCount(),
+			Digest:   eng.Digest(),
 			Version:  "1",
 			LoadedAt: s.started,
 		},

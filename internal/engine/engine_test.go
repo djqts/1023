@@ -135,6 +135,18 @@ func TestFingerprintFixtures(t *testing.T) {
 			want: fingerprint.Result{Protocol: "FTP", Product: "Pure-FTPd", Confidence: 0.85},
 		},
 		{
+			name: "filezilla",
+			port: 21,
+			in:   "220-FileZilla Server 1.5.1",
+			want: fingerprint.Result{Protocol: "FTP", Product: "FileZilla Server", Version: "1.5.1", Confidence: 0.9},
+		},
+		{
+			name: "smtp-postfix",
+			port: 25,
+			in:   "220 mail.example.com ESMTP Postfix",
+			want: fingerprint.Result{Protocol: "SMTP", Product: "Postfix", Confidence: 0.8},
+		},
+		{
 			name: "tls",
 			port: 9999,
 			in:   "\x16\x03\x01\x00\xa5\x01\x00\x00\xa1",

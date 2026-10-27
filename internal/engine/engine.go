@@ -22,15 +22,25 @@ type fileSpec struct {
 }
 
 type ruleSpec struct {
-	ID             string   `yaml:"id"`
-	Protocol       string   `yaml:"protocol"`
-	Product        string   `yaml:"product"`
-	Priority       int      `yaml:"priority"`
-	Patterns       []string `yaml:"patterns"`
-	OSHintPatterns []string `yaml:"os_hint_patterns"`
-	OSHint         string   `yaml:"os_hint"`
-	Confidence     float64  `yaml:"confidence"`
-	Ports          []int    `yaml:"ports"`
+	ID             string        `yaml:"id"`
+	Protocol       string        `yaml:"protocol"`
+	Product        string        `yaml:"product"`
+	Priority       int           `yaml:"priority"`
+	Patterns       []string      `yaml:"patterns"`
+	OSHintPatterns []string      `yaml:"os_hint_patterns"`
+	OSHint         string        `yaml:"os_hint"`
+	Confidence     float64       `yaml:"confidence"`
+	Ports          []int         `yaml:"ports"`
+	Examples       []ruleExample `yaml:"examples"`
+}
+
+type ruleExample struct {
+	Banner   string `yaml:"banner"`
+	Port     int    `yaml:"port"`
+	Protocol string `yaml:"protocol"`
+	Product  string `yaml:"product"`
+	Version  string `yaml:"version"`
+	OSHint   string `yaml:"os_hint"`
 }
 
 type compiledRule struct {
@@ -122,11 +132,45 @@ func Load(dir string) (*Engine, error) {
 		return compiled[i].spec.ID < compiled[j].spec.ID
 	})
 
-	return &Engine{
+	eng := &Engine{
 		rules:  compiled,
 		digest: hex.EncodeToString(hash.Sum(nil)),
 		count:  len(compiled),
-	}, nil
+	}
+	if err := eng.validateExamples(); err != nil {
+		return nil, err
+	}
+	return eng, nil
+}
+
+func (e *Engine) validateExamples() error {
+	for _, rule := range e.rules {
+		for _, example := range rule.spec.Examples {
+			if example.Banner == "" {
+				continue
+			}
+			got, err := e.Fingerprint(fingerprint.Input{
+				Port:   example.Port,
+				Banner: []byte(example.Banner),
+			})
+			if err != nil {
+				return fmt.Errorf("rule %q example fingerprint: %w", rule.spec.ID, err)
+			}
+			if example.Protocol != "" && string(got.Protocol) != example.Protocol {
+				return fmt.Errorf("rule %q example protocol: got %q, want %q", rule.spec.ID, got.Protocol, example.Protocol)
+			}
+			if example.Product != "" && got.Product != example.Product {
+				return fmt.Errorf("rule %q example product: got %q, want %q", rule.spec.ID, got.Product, example.Product)
+			}
+			if example.Version != "" && got.Version != example.Version {
+				return fmt.Errorf("rule %q example version: got %q, want %q", rule.spec.ID, got.Version, example.Version)
+			}
+			if example.OSHint != "" && got.OSHint != example.OSHint {
+				return fmt.Errorf("rule %q example os_hint: got %q, want %q", rule.spec.ID, got.OSHint, example.OSHint)
+			}
+		}
+	}
+	return nil
 }
 
 func ruleFiles(dir string) ([]string, error) {

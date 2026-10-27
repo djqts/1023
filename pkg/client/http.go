@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,6 +28,19 @@ func (e *HTTPError) Error() string {
 	return fmt.Sprintf("server %d: %s", e.StatusCode, e.Message)
 }
 
+// PartialError 表示部分批次成功、部分批次失败。
+type PartialError struct {
+	Completed int
+	Total     int
+	Err       error
+}
+
+func (e *PartialError) Error() string {
+	return fmt.Sprintf("partial failure: %d/%d items completed: %v", e.Completed, e.Total, e.Err)
+}
+
+func (e *PartialError) Unwrap() error { return e.Err }
+
 // HTTPClient 是 Client 的 HTTP 实现。
 type HTTPClient struct {
 	cfg  Config
@@ -46,6 +60,15 @@ func NewHTTP(cfg Config) *HTTPClient {
 	if cfg.BatchSize <= 0 {
 		cfg.BatchSize = 500
 	}
+	if cfg.MaxRetries < 0 {
+		cfg.MaxRetries = 0
+	}
+	if cfg.MaxRetries == 0 {
+		cfg.MaxRetries = 3
+	}
+	if cfg.RetryBackoff <= 0 {
+		cfg.RetryBackoff = 200 * time.Millisecond
+	}
 	if cfg.UserAgent == "" {
 		cfg.UserAgent = "banner-fingerprint-client/1.0"
 	}
@@ -55,29 +78,53 @@ func NewHTTP(cfg Config) *HTTPClient {
 	}
 }
 
-// Fingerprint 发送批量识别请求。
+// Fingerprint 分片发送批量识别请求，并对可重试错误做指数退避。
 func (c *HTTPClient) Fingerprint(ctx context.Context, req api.BatchRequest) (api.BatchResponse, error) {
-	if req.Items == nil {
-		req.Items = []api.FingerprintItem{}
+	if len(req.Items) == 0 {
+		return api.BatchResponse{Results: []api.FingerprintResult{}}, nil
 	}
-	payload, err := json.Marshal(req)
-	if err != nil {
-		return api.BatchResponse{}, fmt.Errorf("encode request: %w", err)
+
+	var all []api.FingerprintResult
+	for start := 0; start < len(req.Items); start += c.cfg.BatchSize {
+		end := start + c.cfg.BatchSize
+		if end > len(req.Items) {
+			end = len(req.Items)
+		}
+		part := req.Items[start:end]
+
+		payload, err := json.Marshal(api.BatchRequest{Items: part})
+		if err != nil {
+			return api.BatchResponse{Results: all}, fmt.Errorf("encode request: %w", err)
+		}
+		body, err := c.doWithRetry(ctx, http.MethodPost, "/fingerprint", payload)
+		if err != nil {
+			if len(all) == 0 {
+				return api.BatchResponse{}, err
+			}
+			return api.BatchResponse{Results: all}, &PartialError{Completed: len(all), Total: len(req.Items), Err: err}
+		}
+		results, err := api.DecodeResults(body)
+		if err != nil {
+			if len(all) == 0 {
+				return api.BatchResponse{}, fmt.Errorf("decode response: %w", err)
+			}
+			return api.BatchResponse{Results: all}, &PartialError{Completed: len(all), Total: len(req.Items), Err: err}
+		}
+		if len(results) != len(part) {
+			err = fmt.Errorf("batch result count %d != %d", len(results), len(part))
+			if len(all) == 0 {
+				return api.BatchResponse{}, err
+			}
+			return api.BatchResponse{Results: all}, &PartialError{Completed: len(all), Total: len(req.Items), Err: err}
+		}
+		all = append(all, results...)
 	}
-	body, err := c.do(ctx, http.MethodPost, "/fingerprint", payload)
-	if err != nil {
-		return api.BatchResponse{}, err
-	}
-	results, err := api.DecodeResults(body)
-	if err != nil {
-		return api.BatchResponse{}, fmt.Errorf("decode response: %w", err)
-	}
-	return api.BatchResponse{Results: results}, nil
+	return api.BatchResponse{Results: all}, nil
 }
 
 // Health 查询健康状态。
 func (c *HTTPClient) Health(ctx context.Context) (api.HealthResponse, error) {
-	body, err := c.do(ctx, http.MethodGet, "/health", nil)
+	body, err := c.doWithRetry(ctx, http.MethodGet, "/health", nil)
 	if err != nil {
 		return api.HealthResponse{}, err
 	}
@@ -86,6 +133,40 @@ func (c *HTTPClient) Health(ctx context.Context) (api.HealthResponse, error) {
 		return api.HealthResponse{}, fmt.Errorf("decode health: %w", err)
 	}
 	return resp, nil
+}
+
+func (c *HTTPClient) doWithRetry(ctx context.Context, method, path string, payload []byte) ([]byte, error) {
+	attempts := c.cfg.MaxRetries + 1
+	if attempts < 1 {
+		attempts = 1
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		body, err := c.do(ctx, method, path, payload)
+		if err == nil {
+			return body, nil
+		}
+		lastErr = err
+		if attempt == attempts-1 || !retryable(err) || ctx.Err() != nil {
+			break
+		}
+		delay := c.cfg.RetryBackoff * time.Duration(1<<attempt)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+	return nil, lastErr
+}
+
+func retryable(err error) bool {
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode == http.StatusTooManyRequests || httpErr.StatusCode >= 500
+	}
+	return !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
 }
 
 func (c *HTTPClient) do(ctx context.Context, method, path string, payload []byte) ([]byte, error) {

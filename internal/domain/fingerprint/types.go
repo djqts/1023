@@ -16,6 +16,7 @@ const (
 	ProtocolMySQL   Protocol = "MySQL"
 	ProtocolRedis   Protocol = "Redis"
 	ProtocolFTP     Protocol = "FTP"
+	ProtocolSMTP    Protocol = "SMTP"
 )
 
 // Input 是进入领域层的一条扫描数据。

@@ -9,6 +9,13 @@ rules:
       - '^SSH-\d\.\d+-OpenSSH_(?P<version>[0-9][^\s]*)'
     os_hint_patterns:
       - '(?i)\b(Ubuntu|Debian|FreeBSD|CentOS|Windows)\b'
+    examples:
+      - banner: 'SSH-2.0-OpenSSH_8.9p1 Ubuntu-3'
+        port: 22
+        protocol: SSH
+        product: OpenSSH
+        version: 8.9p1
+        os_hint: Ubuntu
 
   - id: ssh-dropbear
     protocol: SSH

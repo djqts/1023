@@ -1,5 +1,19 @@
 version: "1"
 rules:
+  - id: ftp-filezilla
+    protocol: FTP
+    product: FileZilla Server
+    priority: 100
+    confidence: 0.9
+    patterns:
+      - '(?im)^220[- ]FileZilla Server(?:\s+(?P<version>[0-9][^\s]*))?'
+    examples:
+      - banner: "220-FileZilla Server 1.5.1"
+        port: 21
+        protocol: FTP
+        product: FileZilla Server
+        version: 1.5.1
+
   - id: ftp-proftpd
     protocol: FTP
     product: ProFTPD
@@ -7,6 +21,12 @@ rules:
     confidence: 0.9
     patterns:
       - '(?im)^220[ -]ProFTPD\s+(?P<version>[0-9][^\s]*)'
+    examples:
+      - banner: '220 ProFTPD 1.3.7 Server (ProFTPD)'
+        port: 21
+        protocol: FTP
+        product: ProFTPD
+        version: 1.3.7
 
   - id: ftp-vsftpd
     protocol: FTP

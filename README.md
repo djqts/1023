@@ -46,6 +46,32 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\up.ps1
 
 脚本会优先使用本机已有的 golang/distroless 镜像，构建 server/client 后执行 `docker compose up --no-build` 并运行 client。可通过 `GO_IMAGE` / `RUNTIME_IMAGE` 环境变量覆盖基础镜像，也可用 `-SkipClient` 只启动服务。
 
+无宿主入口（airgap）编排：
+
+```bash
+docker compose -f docker-compose.yml -f compose.airgap.yaml up -d --no-build
+```
+
+`compose.airgap.yaml` 会清空 server 的端口发布，client 仍走 `internal` 网络访问 `server:8080`。
+
+## P1 能力
+
+| 能力 | 实现 |
+|---|---|
+| 二进制输入 | `banner_b64` + 非标准 `\xNN` JSON 转义兼容 |
+| 客户端健壮性 | 自动分片（`-batch`）、5xx/429/超时重试（`-retries`）、部分成功输出并退出 3 |
+| 规则运维 | 启动时校验规则 examples；Linux 下 `SIGHUP` 原子热加载，坏规则保留旧快照 |
+| 协议扩展 | SMTP（Postfix/Exim/Exchange）、FileZilla Server、IIS、Pure-FTPd、dropbear 等 |
+| 部署 | 多架构构建参数（`TARGETOS/TARGETARCH`）、airgap overlay |
+| 性能工程 | `internal/engine` benchmark；参考约 3.5µs/op（单条、6 个典型 banner 轮询） |
+| CI | `.github/workflows/ci.yml`：test / vet / build / compose config |
+
+规则热加载（Linux 容器）：
+
+```bash
+docker kill -s HUP banner-fingerprint-server-1
+```
+
 ## API
 
 ### `POST /fingerprint`
@@ -78,7 +104,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\up.ps1
 {"ip":"1.2.3.23","port":12345,"protocol":"unknown","product":"","version":"","os_hint":"","confidence":0}
 ```
 
-协议值按自测示例使用大写：`SSH`、`HTTP`、`MySQL`、`Redis`、`FTP`；未知为小写 `unknown`。
+协议值按自测示例使用大写：`SSH`、`HTTP`、`MySQL`、`Redis`、`FTP`、`SMTP`；未知为小写 `unknown`。
 
 ### `GET /health`
 
@@ -102,6 +128,7 @@ go run ./cmd/client -server http://127.0.0.1:8080 -input data/input.json -json
 ```bash
 go test ./...
 go vet ./...
+go test ./internal/engine -run '^$' -bench BenchmarkFingerprint -benchtime=100x
 ```
 
 ## 规则
@@ -120,7 +147,7 @@ go vet ./...
     - '(?i)\((Ubuntu|Debian|CentOS|FreeBSD)\)'
 ```
 
-规则文件通过 Compose 只读挂载到 `/app/rules`；镜像内不包含规则。
+规则文件通过 Compose 只读挂载到 `/app/rules`；镜像内不包含规则。Linux 下发送 `SIGHUP` 会重新加载并原子替换快照；新规则编译失败时保留旧快照。
 
 ## 目录
 
@@ -136,7 +163,10 @@ internal/platform/       配置、错误码、日志、ID/时钟
 pkg/api/                 共享 HTTP DTO 与容错 JSON 解码
 pkg/client/              HTTP client 实现
 rules/                   YAML 识别规则
-deploy/                  Dockerfile、MySQL 迁移
+deploy/                  Dockerfile、MySQL 初始化 SQL
+scripts/up.ps1           受限环境直连构建 + 启动脚本
+compose.airgap.yaml      无宿主端口覆盖
+.github/workflows/ci.yml CI
 data/input.json          自测输入
 docs/                    需求文档、架构设计
 ```
@@ -145,7 +175,8 @@ docs/                    需求文档、架构设计
 
 ## 当前实现边界
 
-- P0 同步识别链路已可运行；RabbitMQ/gRPC 为 P1 骨架/可选。
+- P0 同步识别链路已可运行；P1 的客户端分片/重试、规则热加载、examples 校验、SMTP/FileZilla 扩展、airgap、多架构参数、benchmark、CI 已落地。
+- RabbitMQ 异步任务与 gRPC 仍是可选架构扩展，不进入默认 Compose；P0/P1 验收不依赖它们。
 - MySQL 审计与 Redis 健康探测为旁路：连接失败只降级，不阻断识别。
-- 规则匹配覆盖 SSH、HTTP（nginx/Apache/Jetty/Microsoft-IIS）、MySQL、Redis、FTP（ProFTPD/vsFTPd/Pure-FTPd/Microsoft FTP）。
+- 规则匹配覆盖 SSH、HTTP（nginx/Apache/Jetty/Microsoft-IIS）、MySQL、Redis、FTP（ProFTPD/vsFTPd/Pure-FTPd/FileZilla/Microsoft FTP）、SMTP（Postfix/Exim/Exchange）。
 - 二进制 banner 支持 `banner_b64`；也兼容 `\xNN` 形式的非标准 JSON 转义。

@@ -13,6 +13,7 @@ const (
 	ProtocolMySQL   = "MySQL"
 	ProtocolRedis   = "Redis"
 	ProtocolFTP     = "FTP"
+	ProtocolSMTP    = "SMTP"
 )
 
 // 健康状态取值。

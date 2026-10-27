@@ -20,3 +20,8 @@ rules:
       - '^-ERR'
       - '^-NOAUTH'
       - '^-WRONGTYPE'
+    examples:
+      - banner: "-ERR wrong number of arguments for 'get' command"
+        port: 6379
+        protocol: Redis
+        product: Redis
