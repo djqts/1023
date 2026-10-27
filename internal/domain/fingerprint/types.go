@@ -11,11 +11,11 @@ type Protocol string
 // 协议取值。unknown 表示无法识别，不是错误。
 const (
 	ProtocolUnknown Protocol = "unknown"
-	ProtocolSSH     Protocol = "ssh"
-	ProtocolHTTP    Protocol = "http"
-	ProtocolMySQL   Protocol = "mysql"
-	ProtocolRedis   Protocol = "redis"
-	ProtocolFTP     Protocol = "ftp"
+	ProtocolSSH     Protocol = "SSH"
+	ProtocolHTTP    Protocol = "HTTP"
+	ProtocolMySQL   Protocol = "MySQL"
+	ProtocolRedis   Protocol = "Redis"
+	ProtocolFTP     Protocol = "FTP"
 )
 
 // Input 是进入领域层的一条扫描数据。

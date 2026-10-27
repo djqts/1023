@@ -1,0 +1,50 @@
+version: "1"
+rules:
+  - id: http-nginx
+    protocol: HTTP
+    product: nginx
+    priority: 100
+    confidence: 0.9
+    patterns:
+      - '(?im)^Server:\s*nginx/(?P<version>[0-9][^\s]*)'
+      - '(?im)^Server:\s*nginx\s*$'
+    os_hint_patterns:
+      - '(?i)\((Ubuntu|Debian|CentOS|FreeBSD)\)'
+
+  - id: http-apache
+    protocol: HTTP
+    product: Apache
+    priority: 100
+    confidence: 0.9
+    patterns:
+      - '(?im)^Server:\s*Apache/(?P<version>[0-9][^\s]*)'
+      - '(?im)^Server:\s*Apache\s*$'
+    os_hint_patterns:
+      - '(?i)\((Ubuntu|Debian|CentOS|FreeBSD)\)'
+
+  - id: http-jetty
+    protocol: HTTP
+    product: Jetty
+    priority: 100
+    confidence: 0.85
+    patterns:
+      - '(?im)^Server:\s*Jetty[/(](?P<version>[0-9][0-9A-Za-z._-]*)'
+    os_hint_patterns:
+      - '(?i)\((Ubuntu|Debian|CentOS|FreeBSD)\)'
+
+  - id: http-iis
+    protocol: HTTP
+    product: Microsoft-IIS
+    priority: 100
+    confidence: 0.85
+    os_hint: Windows
+    patterns:
+      - '(?im)^Server:\s*Microsoft-IIS/(?P<version>[0-9][^\s]*)'
+
+  - id: http-generic
+    protocol: HTTP
+    priority: 10
+    confidence: 0.6
+    patterns:
+      - '(?im)^HTTP/\d\.\d'
+      - '(?im)^Server:\s*'

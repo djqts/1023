@@ -1,20 +1,20 @@
-# syntax=docker/dockerfile:1.7
+ARG GO_IMAGE=golang:1.25-alpine
+ARG RUNTIME_IMAGE=gcr.io/distroless/static-debian12:nonroot
 
-FROM golang:1.25-alpine AS build
+FROM ${GO_IMAGE} AS build
 
 WORKDIR /src
 
-COPY go.mod ./
-RUN --mount=type=cache,target=/go/pkg/mod go mod download
-
+COPY go.mod go.sum ./
+COPY vendor ./vendor
 COPY . .
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server && \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/client ./cmd/client
+    CGO_ENABLED=0 GOOS=linux go build -mod=vendor -trimpath -ldflags="-s -w" -o /out/server ./cmd/server && \
+    CGO_ENABLED=0 GOOS=linux go build -mod=vendor -trimpath -ldflags="-s -w" -o /out/client ./cmd/client
 
-FROM gcr.io/distroless/static-debian12:nonroot AS server
+FROM ${RUNTIME_IMAGE} AS server
 
 ARG VERSION=dev
 ARG COMMIT=unknown
@@ -30,7 +30,7 @@ USER nonroot:nonroot
 EXPOSE 8080
 ENTRYPOINT ["/app/server"]
 
-FROM gcr.io/distroless/static-debian12:nonroot AS client
+FROM ${RUNTIME_IMAGE} AS client
 
 ARG VERSION=dev
 ARG COMMIT=unknown

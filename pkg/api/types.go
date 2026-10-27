@@ -8,11 +8,11 @@ import "time"
 // 协议取值。unknown 是识别失败时的统一值，不是错误。
 const (
 	ProtocolUnknown = "unknown"
-	ProtocolSSH     = "ssh"
-	ProtocolHTTP    = "http"
-	ProtocolMySQL   = "mysql"
-	ProtocolRedis   = "redis"
-	ProtocolFTP     = "ftp"
+	ProtocolSSH     = "SSH"
+	ProtocolHTTP    = "HTTP"
+	ProtocolMySQL   = "MySQL"
+	ProtocolRedis   = "Redis"
+	ProtocolFTP     = "FTP"
 )
 
 // 健康状态取值。

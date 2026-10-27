@@ -1,0 +1,34 @@
+version: "1"
+rules:
+  - id: ftp-proftpd
+    protocol: FTP
+    product: ProFTPD
+    priority: 100
+    confidence: 0.9
+    patterns:
+      - '(?im)^220[ -]ProFTPD\s+(?P<version>[0-9][^\s]*)'
+
+  - id: ftp-vsftpd
+    protocol: FTP
+    product: vsFTPd
+    priority: 100
+    confidence: 0.85
+    patterns:
+      - '(?im)^220[ -]?\(vsFTPd\s+(?P<version>[0-9][^\)]*)'
+
+  - id: ftp-pureftpd
+    protocol: FTP
+    product: Pure-FTPd
+    priority: 90
+    confidence: 0.85
+    patterns:
+      - '(?im)^220.*Pure-FTPd'
+
+  - id: ftp-microsoft
+    protocol: FTP
+    product: Microsoft FTP Service
+    priority: 90
+    confidence: 0.85
+    os_hint: Windows
+    patterns:
+      - '(?im)^220.*Microsoft FTP Service'

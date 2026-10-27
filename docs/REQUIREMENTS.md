@@ -70,8 +70,8 @@
 
 **业务规则**：
 
-- 协议值统一小写：`ssh`、`http`、`mysql`、`redis`、`ftp`、`unknown`。
-- 强签名优先于端口先验；例如 2222 端口的 SSH 仍应识别为 `ssh`。
+- 协议值按自测示例使用大写：`SSH`、`HTTP`、`MySQL`、`Redis`、`FTP`；无法识别统一为小写 `unknown`。
+- 强签名优先于端口先验；例如 2222 端口的 SSH 仍应识别为 `SSH`。
 - 不得把 SMTP 的 `220` 问候误判为 FTP；FTP 判定必须包含 FTP 产品特征。
 - 同一输入、同一规则版本，输出必须一致。
 
@@ -88,7 +88,7 @@
 
 **业务规则**：
 
-- 产品名使用统一规范名，例如 `OpenSSH`、`nginx`、`Apache`、`Jetty`、`MySQL`、`MariaDB`、`Redis`、`vsftpd`、`ProFTPD`、`Microsoft FTP Service`。
+- 产品名使用统一规范名，例如 `OpenSSH`、`nginx`、`Apache`、`Jetty`、`MySQL`、`MariaDB`、`Redis`、`vsFTPd`、`ProFTPD`、`Microsoft FTP Service`。
 - 版本精确到 banner 中可提取的粒度；能到补丁号就到补丁号（如 `8.2p1`、`1.18.0`），提取不到完整版本时留空，不输出半截版本。
 - `os_hint` 只根据 banner 中的证据填写（发行版标记、Windows 产品名等）；没有证据时为空字符串。
 - Redis 只返回 `+PONG` 等无版本信息时，`version=""` 是正确结果。
@@ -146,14 +146,14 @@
 **请求约定（暂定，待示例确认）**：
 
 - `Content-Type: application/json`。
-- 请求体：`{"items":[{"ip":"...","port":22,"banner":"..."}]}`。
+- 请求体：裸数组 `[{"ip":"...","port":22,"banner":"..."}]`；同时兼容 `{"items":[...]}`。
 - `ip` 为字符串；`port` 为 1–65535 的整数；`banner` 为字符串，可为空。
 - 单批最多 10,000 条；请求体最大 8 MiB；单条 banner 最大 16 KiB；请求超时 30 秒。
 - 允许空数组，返回空结果。
 
 **响应约定**：
 
-- `200`：`{"results":[...]}`，每条严格包含 `ip`、`port`、`protocol`、`product`、`version`、`os_hint`、`confidence` 七个字段。
+- `200`：裸数组 `[...]`，每条严格包含 `ip`、`port`、`protocol`、`product`、`version`、`os_hint`、`confidence` 七个字段。
 - 结果顺序与输入顺序一致；不额外返回 `evidence`、`rule_id` 等字段。
 - unknown 条目也返回 200，不返回错误。
 
@@ -541,9 +541,9 @@
 
 | ID | 问题 | 影响 | 建议/选项 | 状态 |
 |---|---|---|---|---|
-| Q-01 | 题目提到的“示例”未提供 | 无法对齐识别深度、字段命名、置信度量级 | 请补充示例；未补充前按附录 B 基线执行 | 待定 |
-| Q-02 | 批量请求/响应形状未定义 | 评测方可能按裸数组或包裹对象调用 | P0 规范形状为 `{"items":[]}` / `{"results":[]}`；兼容裸数组作为待定增强，不改变响应契约 | 待定 |
-| Q-03 | 协议值大小写、unknown 精确值 | 严格 schema 比对可能失败 | 统一小写，unknown 为字符串 `"unknown"` | 假设 |
+| Q-01 | 题目提到的“示例”未提供 | 无法对齐识别深度、字段命名、置信度量级 | 已按用户补充的自测示例实现：协议大写、响应裸数组、示例置信度对齐 | 已决 |
+| Q-02 | 批量请求/响应形状未定义 | 评测方可能按裸数组或包裹对象调用 | 请求兼容裸数组与 `{"items":[]}`；响应固定裸数组 | 已决 |
+| Q-03 | 协议值大小写、unknown 精确值 | 严格 schema 比对可能失败 | 协议大写；unknown 为小写 `"unknown"` | 已决 |
 | Q-04 | 产品规范名与版本格式 | `Apache` vs `Apache httpd`、Jetty 版本是否带 `v...` | 建议：`Apache`；Jetty 保留完整版本串；MySQL/MariaDB 分开 | 待定 |
 | Q-05 | `os_hint` 粒度 | 只写发行版还是带版本号 | 建议：有明确证据才写；能确定版本时写 `Ubuntu 22.04`，否则 `Ubuntu`；无证据为空串 | 假设 |
 | Q-06 | 置信度语义 | 是校准概率还是启发式分数 | 建议：定义为规则证据强度分数，确定性计算，不承诺概率校准 | 假设 |
@@ -591,19 +591,19 @@
 
 | # | 横幅证据（摘要） | protocol | product | version | os_hint | conf |
 |---|---|---|---|---|---|---|
-| 1 | `SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.5` | ssh | OpenSSH | 8.2p1 | Ubuntu | 0.98 |
-| 2 | `SSH-2.0-dropbear_2020.81` | ssh | dropbear | 2020.81 | | 0.95 |
-| 3 | `HTTP/1.1 200` + `Server: nginx/1.18.0 (Ubuntu)` | http | nginx | 1.18.0 | Ubuntu | 0.98 |
-| 4 | `Server: Apache/2.4.41 (Ubuntu)` | http | Apache | 2.4.41 | Ubuntu | 0.97 |
-| 5 | `Server: Jetty(9.4.43.v20210629)` | http | Jetty | 9.4.43.v20210629 | | 0.96 |
-| 6 | MySQL 握手 `5.7.33-log` | mysql | MySQL | 5.7.33 | | 0.98 |
-| 7 | MySQL 握手 `8.0.32-0ubuntu0.22.04.2` | mysql | MySQL | 8.0.32 | Ubuntu 22.04 | 0.97 |
-| 8 | MariaDB `5.5.5-10.6.12-MariaDB` | mysql | MariaDB | 10.6.12 | | 0.96 |
-| 9 | `+PONG` / `-NOAUTH` | redis | Redis | | | 0.85 |
-| 10 | INFO `redis_version:7.0.5`、`os:Linux` | redis | Redis | 7.0.5 | Linux | 0.95 |
-| 11 | `220 (vsFTPd 3.0.3)` | ftp | vsftpd | 3.0.3 | | 0.97 |
-| 12 | `220 ProFTPD 1.3.5e Server` | ftp | ProFTPD | 1.3.5e | | 0.96 |
-| 13 | `220 Microsoft FTP Service` | ftp | Microsoft FTP Service | | Windows | 0.90 |
+| 1 | `SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.5` | SSH | OpenSSH | 8.2p1 | Ubuntu | 0.98 |
+| 2 | `SSH-2.0-dropbear_2020.81` | SSH | dropbear | 2020.81 | | 0.95 |
+| 3 | `HTTP/1.1 200` + `Server: nginx/1.18.0 (Ubuntu)` | HTTP | nginx | 1.18.0 | Ubuntu | 0.98 |
+| 4 | `Server: Apache/2.4.41 (Ubuntu)` | HTTP | Apache | 2.4.41 | Ubuntu | 0.97 |
+| 5 | `Server: Jetty(9.4.43.v20210629)` | HTTP | Jetty | 9.4.43.v20210629 | | 0.96 |
+| 6 | MySQL 握手 `5.7.33-log` | MySQL | MySQL | 5.7.33 | | 0.98 |
+| 7 | MySQL 握手 `8.0.32-0ubuntu0.22.04.2` | MySQL | MySQL | 8.0.32 | Ubuntu 22.04 | 0.97 |
+| 8 | MariaDB `5.5.5-10.6.12-MariaDB` | MySQL | MariaDB | 10.6.12 | | 0.96 |
+| 9 | `+PONG` / `-NOAUTH` | Redis | Redis | | | 0.85 |
+| 10 | INFO `redis_version:7.0.5`、`os:Linux` | Redis | Redis | 7.0.5 | Linux | 0.95 |
+| 11 | `220 (vsFTPd 3.0.3)` | FTP | vsFTPd | 3.0.3 | | 0.97 |
+| 12 | `220 ProFTPD 1.3.5e Server` | FTP | ProFTPD | 1.3.5e | | 0.96 |
+| 13 | `220 Microsoft FTP Service` | FTP | Microsoft FTP Service | | Windows | 0.90 |
 | 14 | `220 mail.example.com ESMTP Postfix` | unknown | | | | 0 |
 | 15 | 随机二进制/空横幅 | unknown | | | | 0 |
 

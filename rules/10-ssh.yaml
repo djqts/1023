@@ -1,0 +1,21 @@
+version: "1"
+rules:
+  - id: ssh-openssh
+    protocol: SSH
+    product: OpenSSH
+    priority: 100
+    confidence: 0.95
+    patterns:
+      - '^SSH-\d\.\d+-OpenSSH_(?P<version>[0-9][^\s]*)'
+    os_hint_patterns:
+      - '(?i)\b(Ubuntu|Debian|FreeBSD|CentOS|Windows)\b'
+
+  - id: ssh-dropbear
+    protocol: SSH
+    product: dropbear
+    priority: 90
+    confidence: 0.9
+    patterns:
+      - '^SSH-\d\.\d+-dropbear_(?P<version>[0-9.]+)'
+    os_hint_patterns:
+      - '(?i)\b(Ubuntu|Debian|FreeBSD)\b'

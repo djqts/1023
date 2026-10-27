@@ -1,0 +1,22 @@
+version: "1"
+rules:
+  - id: redis-info
+    protocol: Redis
+    product: Redis
+    priority: 100
+    confidence: 0.95
+    patterns:
+      - '(?m)^redis_version:(?P<version>[0-9][^\r\n]*)'
+    os_hint_patterns:
+      - '(?m)^os:(?P<os>[A-Za-z][^\r\n]*)'
+
+  - id: redis-command
+    protocol: Redis
+    product: Redis
+    priority: 80
+    confidence: 0.7
+    patterns:
+      - '^\+PONG'
+      - '^-ERR'
+      - '^-NOAUTH'
+      - '^-WRONGTYPE'

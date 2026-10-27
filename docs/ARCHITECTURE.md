@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | v0.2（草案） |
+| 文档版本 | v0.3（实现落地版） |
 | 编制日期 | 2026-10-23 |
 | 文档状态 | 待评审 |
 | 输入依据 | `docs/REQUIREMENTS.md` v0.1、指定技术栈 |
@@ -15,6 +15,9 @@
 |---|---|---|
 | v0.1 | 2026-10-23 | 初版：Gin/GORM/MySQL/slog/eris；RabbitMQ/gRPC 为 P1 |
 | v0.2 | 2026-10-23 | 加入 Redis：规则快照缓存、限流/幂等/任务状态（P1）；明确 Redis 不进识别热路径 |
+| v0.3 | 2026-10-27 | 落地实现：MySQL init SQL、无 migrate 服务；协议大写、响应裸数组；P1 RabbitMQ/worker 暂不启用 |
+
+> 实现落地说明（2026-10-27）：P0 Compose 为 `mysql`（init SQL）+ `redis` + `server` + `client`；RabbitMQ/worker 仅保留代码骨架，不进入默认编排。识别主链路仍为内存规则快照，MySQL 审计/Redis 探测均为旁路。
 
 > 设计结论先行：
 >
